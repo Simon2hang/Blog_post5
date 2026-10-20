@@ -4,10 +4,11 @@ library(readr)
 library(stringr)
 
 
-crime <- read_csv(
-  "data/raw_data/boston_crime_2025.csv",
+crimes <- read_csv(
+  "data/raw_data/boston_reported_crimes_2025.csv",
   show_col_types = FALSE
 )
+
 
 neighborhoods <- st_read(
   "data/raw_data/boston_neighborhoods_2025.geojson",
@@ -15,15 +16,26 @@ neighborhoods <- st_read(
 )
 
 
-glimpse(crime)
-
-print(
-  names(neighborhoods)
+message(
+  "Reported crime rows loaded: ",
+  nrow(crimes)
 )
 
 message(
-  "Raw crime rows: ",
-  nrow(crime)
+  "Neighborhood polygons loaded: ",
+  nrow(neighborhoods)
+)
+
+
+message("")
+message("Crime classifications:")
+
+print(
+  crimes |>
+    count(
+      CRIME_PART,
+      sort = TRUE
+    )
 )
 
 
@@ -37,16 +49,26 @@ clean_name <- function(x) {
 }
 
 
+# Crime data
 
-crime <- crime |>
+crimes <- crimes |>
+  
+  filter(
+    !is.na(INC_NUM),
+    !is.na(NEIGHBORHOOD),
+    NEIGHBORHOOD != ""
+  ) |>
+  
   mutate(
     neighborhood_key =
       clean_name(NEIGHBORHOOD)
   )
 
 
+# GIS neighborhood data
 
 neighborhoods <- neighborhoods |>
+  
   mutate(
     
     neighborhood =
@@ -60,57 +82,55 @@ neighborhoods <- neighborhoods |>
     
     square_miles =
       as.numeric(SquareMiles)
+    
   )
 
 
-
-crime_valid <- crime |>
-  filter(
-    !is.na(NEIGHBORHOOD),
-    NEIGHBORHOOD != "",
-    !is.na(INC_NUM)
-  )
-
-
-message(
-  "Crime rows with valid neighborhood: ",
-  nrow(crime_valid)
-)
-
-
-crime_incidents <- crime_valid |>
+crime_incidents <- crimes |>
+  
   distinct(
     INC_NUM,
     .keep_all = TRUE
   )
 
 
+message("")
 message(
-  "Unique incidents: ",
+  "Unique reported crime incidents: ",
   nrow(crime_incidents)
 )
 
 
 
 crime_by_neighborhood <- crime_incidents |>
+  
   group_by(
     neighborhood_key
   ) |>
+  
   summarise(
-    crime_count = n(),
+    
+    crime_count =
+      n(),
+    
     .groups = "drop"
   )
 
 
+
 message("")
-message("Crime neighborhood names NOT matched to GIS:")
+message("Crime neighborhoods not matched to GIS:")
+
 
 unmatched_crime <- anti_join(
   crime_by_neighborhood,
+  
   neighborhoods |>
     st_drop_geometry(),
+  
   by = "neighborhood_key"
 )
+
 
 print(
   unmatched_crime
@@ -118,14 +138,19 @@ print(
 
 
 message("")
-message("GIS neighborhood names without crime match:")
+message("GIS neighborhoods without a crime match:")
+
 
 unmatched_map <- anti_join(
+  
   neighborhoods |>
     st_drop_geometry(),
+  
   crime_by_neighborhood,
+  
   by = "neighborhood_key"
 )
+
 
 print(
   unmatched_map |>
@@ -134,6 +159,7 @@ print(
       neighborhood_key
     )
 )
+
 
 
 crime_map <- neighborhoods |>
@@ -155,8 +181,6 @@ crime_map <- neighborhoods |>
 
 
 
-# Calculate crime rate
-
 crime_map <- crime_map |>
   
   mutate(
@@ -166,26 +190,22 @@ crime_map <- crime_map |>
         population > 0,
         crime_count / population * 1000,
         NA_real_
-      ),
-    
-    incidents_per_sq_mile =
-      if_else(
-        square_miles > 0,
-        crime_count / square_miles,
-        NA_real_
       )
+    
   )
 
 
-crime_categories <- crime_valid |>
+crime_types <- crimes |>
+  
   filter(
     !is.na(CRIME),
     CRIME != ""
   ) |>
+  
   count(
     CRIME,
     sort = TRUE,
-    name = "offense_count"
+    name = "crime_count"
   )
 
 
@@ -200,8 +220,18 @@ crime_monthly <- crime_incidents |>
     name = "crime_count"
   ) |>
   
-  arrange(MONTH)
+  arrange(
+    MONTH
+  )
 
+
+crime_part_summary <- crimes |>
+  
+  count(
+    CRIME_PART,
+    sort = TRUE,
+    name = "crime_count"
+  )
 
 
 st_write(
@@ -214,13 +244,13 @@ st_write(
 
 write_csv(
   crime_incidents,
-  "data/processed_data/boston_crime_incidents_2025.csv"
+  "data/processed_data/boston_reported_crime_incidents_2025.csv"
 )
 
 
 write_csv(
-  crime_categories,
-  "data/processed_data/crime_categories_2025.csv"
+  crime_types,
+  "data/processed_data/crime_types_2025.csv"
 )
 
 
@@ -230,13 +260,21 @@ write_csv(
 )
 
 
+write_csv(
+  crime_part_summary,
+  "data/processed_data/crime_part_summary_2025.csv"
+)
+
+
 
 message("")
+message("========================================")
 message("CLEANING COMPLETE")
+message("========================================")
 
 
 message("")
-message("Neighborhood results:")
+message("Neighborhood crime results:")
 
 print(
   crime_map |>
@@ -247,8 +285,7 @@ print(
       neighborhood,
       population,
       crime_count,
-      crime_rate_per_1000,
-      incidents_per_sq_mile
+      crime_rate_per_1000
     ) |>
     
     arrange(
@@ -258,19 +295,27 @@ print(
 
 
 message("")
-message("Top crime categories:")
+message("Top 15 reported crime types:")
 
 print(
   head(
-    crime_categories,
-    10
+    crime_types,
+    15
   )
 )
 
 
 message("")
-message("Monthly crime incidents:")
+message("Monthly reported crime incidents:")
 
 print(
   crime_monthly
+)
+
+
+message("")
+message("Part One vs Part Two:")
+
+print(
+  crime_part_summary
 )

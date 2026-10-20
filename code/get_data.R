@@ -2,6 +2,8 @@ library(sf)
 library(httr2)
 library(dplyr)
 library(readr)
+library(stringr)
+
 
 dir.create(
   "data/raw_data",
@@ -22,9 +24,10 @@ dir.create(
 )
 
 
-
 message("")
+message("========================================")
 message("Downloading Boston neighborhoods...")
+message("========================================")
 
 
 neighborhood_url <- paste0(
@@ -52,8 +55,6 @@ message(
 )
 
 
-# Save GIS file
-
 st_write(
   neighborhoods,
   "data/raw_data/boston_neighborhoods_2025.geojson",
@@ -72,20 +73,17 @@ download_arcgis_table <- function(
   offset <- 0
   pieces <- list()
   
-  
   repeat {
     
     message(
-      "Downloading crime records starting at ",
+      "Downloading records starting at ",
       offset,
       "..."
     )
     
-    
     response <- request(
       paste0(layer_url, "/query")
     ) |>
-      
       req_url_query(
         where = where,
         outFields = out_fields,
@@ -94,11 +92,9 @@ download_arcgis_table <- function(
         resultRecordCount = chunk_size,
         f = "json"
       ) |>
-      
       req_retry(
         max_tries = 3
       ) |>
-      
       req_perform()
     
     
@@ -107,7 +103,7 @@ download_arcgis_table <- function(
       simplifyVector = FALSE
     )
     
-
+    
     if (!is.null(body$error)) {
       
       stop(
@@ -118,7 +114,6 @@ download_arcgis_table <- function(
     
     
     features <- body$features
-    
     
     
     if (length(features) == 0) {
@@ -137,8 +132,6 @@ download_arcgis_table <- function(
     pieces[[length(pieces) + 1]] <- chunk
     
     
-    # Last page
-    
     if (nrow(chunk) < chunk_size) {
       break
     }
@@ -151,7 +144,7 @@ download_arcgis_table <- function(
   if (length(pieces) == 0) {
     
     stop(
-      "No crime records were downloaded."
+      "No records were downloaded."
     )
   }
   
@@ -160,10 +153,14 @@ download_arcgis_table <- function(
 }
 
 
-message("")
-message("Downloading data")
 
-crime_url <- paste0(
+message("")
+message("========================================")
+message("Downloading 2025 Boston Police source data...")
+message("========================================")
+
+
+bpd_url <- paste0(
   "https://services.arcgis.com/",
   "sFnw0xNflSi8J0uh/ArcGIS/rest/services/",
   "Boston_Incidents_View/",
@@ -171,19 +168,26 @@ crime_url <- paste0(
 )
 
 
-crime_2025 <- download_arcgis_table(
+bpd_source_2025 <- download_arcgis_table(
   
-  layer_url = crime_url,
+  layer_url = bpd_url,
   
   where = "YEAR = 2025",
   
   out_fields = paste(
     "INC_NUM",
     "CRIME",
+    "OFFENSE_CODE",
+    "OFFENSE_DESC",
+    "CRIME_PART",
     "CRIME_CATEGORY",
+    "REPORT_DATE",
     "YEAR",
     "MONTH",
+    "DAY_OF_WEEK",
+    "HOUR_OF_DAY",
     "NEIGHBORHOOD",
+    "DISTRICT",
     sep = ","
   ),
   
@@ -192,18 +196,106 @@ crime_2025 <- download_arcgis_table(
 
 
 message(
-  "Crime rows downloaded: ",
-  nrow(crime_2025)
+  "Total BPD source rows downloaded: ",
+  nrow(bpd_source_2025)
 )
+
+
+message("")
+message("CRIME_PART values found in the source:")
+
+print(
+  bpd_source_2025 |>
+    count(
+      CRIME_PART,
+      sort = TRUE
+    )
+)
+
+
+
+boston_crimes_2025 <- bpd_source_2025 |>
+  
+  mutate(
+    
+    crime_part_clean =
+      CRIME_PART |>
+      str_to_lower() |>
+      str_squish()
+    
+  ) |>
+  
+  filter(
+    
+    crime_part_clean %in% c(
+      "part one",
+      "part two",
+      "part 1",
+      "part 2"
+    )
+    
+  ) |>
+  
+  select(
+    -crime_part_clean
+  )
+
+
+
+if (nrow(boston_crimes_2025) == 0) {
+  
+  stop(
+    paste0(
+      "No Part One or Part Two crime records were found. ",
+      "Check the printed CRIME_PART values above before continuing."
+    )
+  )
+}
+
+
+message("")
+message(
+  "Reported crime rows retained: ",
+  nrow(boston_crimes_2025)
+)
+
+
+message("")
+message("Crime classification after filtering:")
+
+print(
+  boston_crimes_2025 |>
+    count(
+      CRIME_PART,
+      sort = TRUE
+    )
+)
+
 
 
 write_csv(
-  crime_2025,
-  "data/raw_data/boston_crime_2025.csv"
+  boston_crimes_2025,
+  "data/raw_data/boston_reported_crimes_2025.csv"
 )
 
 
-# CHECK RESULTS
+
+message("")
+message("Most common crime types:")
+
+print(
+  boston_crimes_2025 |>
+    filter(
+      !is.na(CRIME),
+      CRIME != ""
+    ) |>
+    count(
+      CRIME,
+      sort = TRUE
+    ) |>
+    head(20)
+)
+
 
 message("")
 message("========================================")
@@ -217,47 +309,18 @@ message(
 )
 
 message(
-  "Crime rows: ",
-  nrow(crime_2025)
-)
-
-
-
-message("")
-message("Neighborhood data preview:")
-
-print(
-  neighborhoods |>
-    st_drop_geometry() |>
-    head()
+  "Reported crime rows: ",
+  nrow(boston_crimes_2025)
 )
 
 
 message("")
-message("Crime data preview:")
+message("Files created:")
 
-print(
-  crime_2025 |>
-    head()
+message(
+  "data/raw_data/boston_neighborhoods_2025.geojson"
 )
 
-
-
-message("")
-message("Years in crime dataset:")
-
-print(
-  unique(crime_2025$YEAR)
-)
-
-
-message("")
-message("Crime neighborhood names:")
-
-print(
-  sort(
-    unique(
-      crime_2025$NEIGHBORHOOD
-    )
-  )
+message(
+  "data/raw_data/boston_reported_crimes_2025.csv"
 )

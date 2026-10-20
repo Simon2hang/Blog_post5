@@ -3,12 +3,10 @@ library(dplyr)
 library(readr)
 library(stringr)
 
-
-crimes <- read_csv(
+bpd <- read_csv(
   "data/raw_data/boston_reported_crimes_2025.csv",
   show_col_types = FALSE
 )
-
 
 neighborhoods <- st_read(
   "data/raw_data/boston_neighborhoods_2025.geojson",
@@ -17,8 +15,8 @@ neighborhoods <- st_read(
 
 
 message(
-  "Reported crime rows loaded: ",
-  nrow(crimes)
+  "BPD rows loaded: ",
+  nrow(bpd)
 )
 
 message(
@@ -27,16 +25,116 @@ message(
 )
 
 
+
+bpd <- bpd |>
+  
+  mutate(
+    
+    crime_raw =
+      CRIME |>
+      str_to_upper() |>
+      str_squish(),
+    
+    crime_type = case_when(
+      
+      str_detect(
+        crime_raw,
+        "^HOMICIDE"
+      ) ~ "Homicide",
+      
+      str_detect(
+        crime_raw,
+        "^ROBBERY"
+      ) ~ "Robbery",
+      
+      str_detect(
+        crime_raw,
+        "AGGRAVATED ASSAULT"
+      ) ~ "Aggravated Assault",
+      
+      str_detect(
+        crime_raw,
+        "COMMERCIAL BURGLARY"
+      ) ~ "Commercial Burglary",
+      
+      str_detect(
+        crime_raw,
+        "RESIDENTIAL BURGLARY"
+      ) ~ "Residential Burglary",
+      
+      str_detect(
+        crime_raw,
+        "OTHER BURGLARY"
+      ) ~ "Other Burglary",
+      
+      str_detect(
+        crime_raw,
+        "LARCENY FROM MV|LARCENY FROM A VEHICLE|LARCENY FROM MOTOR VEHICLE"
+      ) ~ "Larceny From a Vehicle",
+      
+      str_detect(
+        crime_raw,
+        "OTHER LARCENY"
+      ) ~ "Other Larceny",
+      
+      str_detect(
+        crime_raw,
+        "AUTO THEFT|MOTOR VEHICLE THEFT"
+      ) ~ "Auto Theft",
+      
+      TRUE ~ NA_character_
+    )
+  )
+
+
+
+crimes <- bpd |>
+  
+  filter(
+    !is.na(crime_type)
+  )
+
+
 message("")
-message("Crime classifications:")
+message(
+  "Major crime rows retained: ",
+  nrow(crimes)
+)
+
+
+message("")
+message("Crime types retained:")
 
 print(
   crimes |>
     count(
-      CRIME_PART,
+      crime_type,
       sort = TRUE
     )
 )
+
+
+
+message("")
+message("Most common excluded BPD record types:")
+
+print(
+  bpd |>
+    
+    filter(
+      is.na(crime_type),
+      !is.na(CRIME),
+      CRIME != ""
+    ) |>
+    
+    count(
+      CRIME,
+      sort = TRUE
+    ) |>
+    
+    head(20)
+)
+
 
 
 clean_name <- function(x) {
@@ -48,8 +146,6 @@ clean_name <- function(x) {
     str_squish()
 }
 
-
-# Crime data
 
 crimes <- crimes |>
   
@@ -65,8 +161,6 @@ crimes <- crimes |>
   )
 
 
-# GIS neighborhood data
-
 neighborhoods <- neighborhoods |>
   
   mutate(
@@ -78,12 +172,10 @@ neighborhoods <- neighborhoods |>
       clean_name(NeighborhoodName),
     
     population =
-      as.numeric(TotalPopulation),
-    
-    square_miles =
-      as.numeric(SquareMiles)
+      as.numeric(TotalPopulation)
     
   )
+
 
 
 crime_incidents <- crimes |>
@@ -96,11 +188,9 @@ crime_incidents <- crimes |>
 
 message("")
 message(
-  "Unique reported crime incidents: ",
+  "Unique major crime incidents: ",
   nrow(crime_incidents)
 )
-
-
 
 crime_by_neighborhood <- crime_incidents |>
   
@@ -119,10 +209,10 @@ crime_by_neighborhood <- crime_incidents |>
 
 
 message("")
-message("Crime neighborhoods not matched to GIS:")
-
+message("Crime neighborhoods NOT matched to GIS:")
 
 unmatched_crime <- anti_join(
+  
   crime_by_neighborhood,
   
   neighborhoods |>
@@ -131,15 +221,13 @@ unmatched_crime <- anti_join(
   by = "neighborhood_key"
 )
 
-
 print(
   unmatched_crime
 )
 
 
 message("")
-message("GIS neighborhoods without a crime match:")
-
+message("GIS neighborhoods without crime matches:")
 
 unmatched_map <- anti_join(
   
@@ -151,7 +239,6 @@ unmatched_map <- anti_join(
   by = "neighborhood_key"
 )
 
-
 print(
   unmatched_map |>
     select(
@@ -159,7 +246,6 @@ print(
       neighborhood_key
     )
 )
-
 
 
 crime_map <- neighborhoods |>
@@ -195,18 +281,15 @@ crime_map <- crime_map |>
   )
 
 
+
 crime_types <- crimes |>
   
-  filter(
-    !is.na(CRIME),
-    CRIME != ""
-  ) |>
-  
   count(
-    CRIME,
+    crime_type,
     sort = TRUE,
     name = "crime_count"
   )
+
 
 
 crime_monthly <- crime_incidents |>
@@ -225,18 +308,10 @@ crime_monthly <- crime_incidents |>
   )
 
 
-crime_part_summary <- crimes |>
-  
-  count(
-    CRIME_PART,
-    sort = TRUE,
-    name = "crime_count"
-  )
-
 
 st_write(
   crime_map,
-  "data/processed_data/boston_crime_map_2025.geojson",
+  "data/processed_data/boston_major_crime_map_2025.geojson",
   delete_dsn = TRUE,
   quiet = TRUE
 )
@@ -244,25 +319,19 @@ st_write(
 
 write_csv(
   crime_incidents,
-  "data/processed_data/boston_reported_crime_incidents_2025.csv"
+  "data/processed_data/boston_major_crime_incidents_2025.csv"
 )
 
 
 write_csv(
   crime_types,
-  "data/processed_data/crime_types_2025.csv"
+  "data/processed_data/major_crime_types_2025.csv"
 )
 
 
 write_csv(
   crime_monthly,
-  "data/processed_data/crime_monthly_2025.csv"
-)
-
-
-write_csv(
-  crime_part_summary,
-  "data/processed_data/crime_part_summary_2025.csv"
+  "data/processed_data/major_crime_monthly_2025.csv"
 )
 
 
@@ -274,7 +343,15 @@ message("========================================")
 
 
 message("")
-message("Neighborhood crime results:")
+message("Major crime types:")
+
+print(
+  crime_types
+)
+
+
+message("")
+message("Neighborhood results:")
 
 print(
   crime_map |>
@@ -295,27 +372,8 @@ print(
 
 
 message("")
-message("Top 15 reported crime types:")
-
-print(
-  head(
-    crime_types,
-    15
-  )
-)
-
-
-message("")
-message("Monthly reported crime incidents:")
+message("Monthly major crime incidents:")
 
 print(
   crime_monthly
-)
-
-
-message("")
-message("Part One vs Part Two:")
-
-print(
-  crime_part_summary
 )

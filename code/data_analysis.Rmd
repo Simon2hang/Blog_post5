@@ -1,5 +1,5 @@
 ---
-title: "Where Is Crime Concentrated in Boston?"
+title: "Where Are Major Reported Crimes Concentrated in Boston?"
 author: "Simon Zhang"
 output: html_notebook
 ---
@@ -12,24 +12,26 @@ library(ggplot2)
 library(scales)
 
 crime_map <- st_read(
-  "../data/processed_data/boston_crime_map_2025.geojson",
+  "../data/processed_data/boston_major_crime_map_2025.geojson",
   quiet = TRUE
 )
 
-crime_categories <- read_csv(
-  "../data/processed_data/crime_categories_2025.csv",
+crime_types <- read_csv(
+  "../data/processed_data/major_crime_types_2025.csv",
   show_col_types = FALSE
 )
 
 crime_monthly <- read_csv(
-  "../data/processed_data/crime_monthly_2025.csv",
+  "../data/processed_data/major_crime_monthly_2025.csv",
   show_col_types = FALSE
 )
 
 glimpse(crime_map)
 ```
 
-## Figure 1
+# Major Reported Crime Across Boston
+
+## Figure 1: Crime Count by Neighborhood
 
 ```{r}
 p1 <- ggplot(crime_map) +
@@ -42,9 +44,9 @@ p1 <- ggplot(crime_map) +
     labels = comma
   ) +
   labs(
-    title = "Reported Crime Across Boston Neighborhoods",
-    subtitle = "Unique reported incidents in 2025",
-    fill = "Incidents"
+    title = "Major Reported Crime Across Boston Neighborhoods",
+    subtitle = "Unique major crime incidents in 2025",
+    fill = "Crimes"
   ) +
   theme_void()
 
@@ -53,7 +55,7 @@ p1
 
 ```{r}
 ggsave(
-  "../figures/crime_by_neighborhood.png",
+  "../figures/major_crime_count_by_neighborhood.png",
   p1,
   width = 9,
   height = 7,
@@ -61,7 +63,7 @@ ggsave(
 )
 ```
 
-## Figure 2
+## Figure 2: Crime Rate per 1,000 Residents
 
 ```{r}
 p2 <- ggplot(crime_map) +
@@ -74,9 +76,9 @@ p2 <- ggplot(crime_map) +
     labels = comma
   ) +
   labs(
-    title = "Reported Crime Rate Across Boston",
-    subtitle = "Reported incidents per 1,000 residents in 2025",
-    fill = "Incidents\nper 1,000"
+    title = "Major Reported Crime Rate Across Boston",
+    subtitle = "Unique major crime incidents per 1,000 residents in 2025",
+    fill = "Crimes\nper 1,000"
   ) +
   theme_void()
 
@@ -85,7 +87,7 @@ p2
 
 ```{r}
 ggsave(
-  "../figures/crime_rate_by_neighborhood.png",
+  "../figures/major_crime_rate_by_neighborhood.png",
   p2,
   width = 9,
   height = 7,
@@ -93,21 +95,24 @@ ggsave(
 )
 ```
 
-## Figure 3
+## Figure 3: Major Crime Types
 
 ```{r}
+crime_types_plot <- crime_types |>
+  arrange(crime_count)
+
 p3 <- ggplot(
-  top_crimes,
+  crime_types_plot,
   aes(
-    x = offense_count,
-    y = reorder(CRIME, offense_count)
+    x = crime_count,
+    y = reorder(crime_type, crime_count)
   )
 ) +
   geom_col() +
   labs(
-    title = "Most Common Police Incident Types in Boston",
-    subtitle = "Top 10 reported incident types in 2025",
-    x = "Number of Reported Incidents",
+    title = "Major Reported Crime Types in Boston",
+    subtitle = "BPD major crime categories in 2025",
+    x = "Number of Reported Crimes",
     y = NULL
   ) +
   scale_x_continuous(
@@ -120,7 +125,7 @@ p3
 
 ```{r}
 ggsave(
-  "../figures/top_crime_categories.png",
+  "../figures/major_crime_types.png",
   p3,
   width = 9,
   height = 6,
@@ -128,12 +133,13 @@ ggsave(
 )
 ```
 
-## Figure 4
+## Figure 4: Crime by Month
 
 ```{r}
 crime_monthly <- crime_monthly |>
   mutate(
     MONTH = as.integer(MONTH),
+
     month_name = factor(
       month.abb[MONTH],
       levels = month.abb
@@ -155,10 +161,10 @@ p4 <- ggplot(
     size = 2.5
   ) +
   labs(
-    title = "Reported Crime by Month in Boston",
-    subtitle = "Unique reported incidents in 2025",
+    title = "Major Reported Crime by Month in Boston",
+    subtitle = "Unique major crime incidents in 2025",
     x = NULL,
-    y = "Number of Incidents"
+    y = "Number of Reported Crimes"
   ) +
   scale_y_continuous(
     labels = comma
@@ -170,7 +176,7 @@ p4
 
 ```{r}
 ggsave(
-  "../figures/crime_by_month.png",
+  "../figures/major_crime_by_month.png",
   p4,
   width = 9,
   height = 6,
@@ -178,7 +184,7 @@ ggsave(
 )
 ```
 
-# Neighborhood Comparison
+# Neighborhood Results
 
 ```{r}
 neighborhood_summary <- crime_map |>
@@ -190,13 +196,13 @@ neighborhood_summary <- crime_map |>
     crime_rate_per_1000
   ) |>
   arrange(
-    desc(crime_rate_per_1000)
+    desc(crime_count)
   )
 
 neighborhood_summary
 ```
 
-# Highest Crime Counts
+## Neighborhoods With the Most Major Reported Crimes
 
 ```{r}
 crime_map |>
@@ -211,7 +217,7 @@ crime_map |>
   head(10)
 ```
 
-# Highest Crime Rates
+## Neighborhoods With the Highest Crime Rates
 
 ```{r}
 crime_map |>
@@ -225,4 +231,13 @@ crime_map |>
     desc(crime_rate_per_1000)
   ) |>
   head(10)
+```
+
+## Major Crime Type Counts
+
+```{r}
+crime_types |>
+  arrange(
+    desc(crime_count)
+  )
 ```

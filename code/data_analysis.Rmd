@@ -1,0 +1,228 @@
+---
+title: "Where Is Crime Concentrated in Boston?"
+author: "Simon Zhang"
+output: html_notebook
+---
+
+```{r setup}
+library(sf)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(scales)
+
+crime_map <- st_read(
+  "../data/processed_data/boston_crime_map_2025.geojson",
+  quiet = TRUE
+)
+
+crime_categories <- read_csv(
+  "../data/processed_data/crime_categories_2025.csv",
+  show_col_types = FALSE
+)
+
+crime_monthly <- read_csv(
+  "../data/processed_data/crime_monthly_2025.csv",
+  show_col_types = FALSE
+)
+
+glimpse(crime_map)
+```
+
+## Figure 1
+
+```{r}
+p1 <- ggplot(crime_map) +
+  geom_sf(
+    aes(fill = crime_count),
+    color = "white",
+    linewidth = 0.3
+  ) +
+  scale_fill_viridis_c(
+    labels = comma
+  ) +
+  labs(
+    title = "Reported Crime Across Boston Neighborhoods",
+    subtitle = "Unique reported incidents in 2025",
+    fill = "Incidents"
+  ) +
+  theme_void()
+
+p1
+```
+
+```{r}
+ggsave(
+  "../figures/crime_by_neighborhood.png",
+  p1,
+  width = 9,
+  height = 7,
+  dpi = 300
+)
+```
+
+## Figure 2
+
+```{r}
+p2 <- ggplot(crime_map) +
+  geom_sf(
+    aes(fill = crime_rate_per_1000),
+    color = "white",
+    linewidth = 0.3
+  ) +
+  scale_fill_viridis_c(
+    labels = comma
+  ) +
+  labs(
+    title = "Reported Crime Rate Across Boston",
+    subtitle = "Reported incidents per 1,000 residents in 2025",
+    fill = "Incidents\nper 1,000"
+  ) +
+  theme_void()
+
+p2
+```
+
+```{r}
+ggsave(
+  "../figures/crime_rate_by_neighborhood.png",
+  p2,
+  width = 9,
+  height = 7,
+  dpi = 300
+)
+```
+
+## Figure 3
+
+```{r}
+p3 <- ggplot(
+  top_crimes,
+  aes(
+    x = offense_count,
+    y = reorder(CRIME, offense_count)
+  )
+) +
+  geom_col() +
+  labs(
+    title = "Most Common Police Incident Types in Boston",
+    subtitle = "Top 10 reported incident types in 2025",
+    x = "Number of Reported Incidents",
+    y = NULL
+  ) +
+  scale_x_continuous(
+    labels = comma
+  ) +
+  theme_minimal()
+
+p3
+```
+
+```{r}
+ggsave(
+  "../figures/top_crime_categories.png",
+  p3,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
+
+## Figure 4
+
+```{r}
+crime_monthly <- crime_monthly |>
+  mutate(
+    MONTH = as.integer(MONTH),
+    month_name = factor(
+      month.abb[MONTH],
+      levels = month.abb
+    )
+  )
+
+p4 <- ggplot(
+  crime_monthly,
+  aes(
+    x = month_name,
+    y = crime_count,
+    group = 1
+  )
+) +
+  geom_line(
+    linewidth = 1
+  ) +
+  geom_point(
+    size = 2.5
+  ) +
+  labs(
+    title = "Reported Crime by Month in Boston",
+    subtitle = "Unique reported incidents in 2025",
+    x = NULL,
+    y = "Number of Incidents"
+  ) +
+  scale_y_continuous(
+    labels = comma
+  ) +
+  theme_minimal()
+
+p4
+```
+
+```{r}
+ggsave(
+  "../figures/crime_by_month.png",
+  p4,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
+```
+
+# Neighborhood Comparison
+
+```{r}
+neighborhood_summary <- crime_map |>
+  st_drop_geometry() |>
+  select(
+    neighborhood,
+    population,
+    crime_count,
+    crime_rate_per_1000
+  ) |>
+  arrange(
+    desc(crime_rate_per_1000)
+  )
+
+neighborhood_summary
+```
+
+# Highest Crime Counts
+
+```{r}
+crime_map |>
+  st_drop_geometry() |>
+  select(
+    neighborhood,
+    crime_count
+  ) |>
+  arrange(
+    desc(crime_count)
+  ) |>
+  head(10)
+```
+
+# Highest Crime Rates
+
+```{r}
+crime_map |>
+  st_drop_geometry() |>
+  select(
+    neighborhood,
+    population,
+    crime_rate_per_1000
+  ) |>
+  arrange(
+    desc(crime_rate_per_1000)
+  ) |>
+  head(10)
+```
